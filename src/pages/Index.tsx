@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PropertyTable } from "@/components/PropertyTable";
 import { StatsCards } from "@/components/StatsCards";
-import { generateMockData, type Imovel } from "@/lib/mock-data";
+import type { Imovel } from "@/lib/mock-data";
 import { exportToCSV } from "@/lib/csv-export";
+import { scrapeUrl, downloadCSVFromServer } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
 const Index = () => {
@@ -16,7 +17,7 @@ const Index = () => {
   const [filter, setFilter] = useState("");
   const { toast } = useToast();
 
-  const handleAnalyze = useCallback(() => {
+  const handleAnalyze = useCallback(async () => {
     if (!url.includes("quintoandar")) {
       toast({
         title: "URL inválida",
@@ -25,20 +26,48 @@ const Index = () => {
       });
       return;
     }
+
     setLoading(true);
     setSearched(false);
-    // Simulates API intercept delay
-    setTimeout(() => {
-      const mockResults = generateMockData(40);
-      setData(mockResults);
-      setLoading(false);
-      setSearched(true);
+
+    try {
+      const result = await scrapeUrl(url);
+
+      if (result.success && result.imoveis.length > 0) {
+        setData(result.imoveis);
+        setSearched(true);
+        toast({
+          title: `${result.count} imóveis encontrados`,
+          description: `Dados extraídos via interceptação GraphQL em ${new Date(result.scrapedAt).toLocaleTimeString("pt-BR")}.`,
+        });
+      } else {
+        toast({
+          title: "Nenhum imóvel encontrado",
+          description: result.error || "Tente outra URL ou verifique se o site está acessível.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erro desconhecido";
       toast({
-        title: `${mockResults.length} imóveis encontrados`,
-        description: "Dados extraídos via interceptação GraphQL (demo).",
+        title: "Erro no scraping",
+        description: message,
+        variant: "destructive",
       });
-    }, 2200);
+    } finally {
+      setLoading(false);
+    }
   }, [url, toast]);
+
+  const handleExportCSV = useCallback(async () => {
+    try {
+      // Tenta exportar via backend primeiro
+      await downloadCSVFromServer(data);
+    } catch {
+      // Fallback: exporta no client-side
+      exportToCSV(data);
+    }
+  }, [data]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -53,7 +82,7 @@ const Index = () => {
             </h1>
           </div>
           <span className="text-[10px] font-mono text-muted-foreground border border-border rounded px-2 py-0.5">
-            v1.0 · DEMO
+            v2.0 · LIVE
           </span>
         </div>
       </header>
@@ -63,7 +92,7 @@ const Index = () => {
         <div className="rounded-lg border border-border bg-card p-6 space-y-4">
           <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
             <AlertTriangle className="h-3 w-3 text-warning" />
-            Interceptação de rede · Endpoint GraphQL listHouses
+            Interceptação de rede · Endpoint GraphQL listHouses · Playwright + Stealth
           </div>
           <div className="flex gap-3">
             <Input
@@ -71,12 +100,20 @@ const Index = () => {
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://www.quintoandar.com.br/alugar/imovel/sao-paulo-sp-brasil..."
               className="flex-1 font-mono text-sm bg-background border-border placeholder:text-muted-foreground/50"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !loading && url) handleAnalyze();
+              }}
             />
             <Button onClick={handleAnalyze} disabled={loading || !url} className="gap-2 font-mono">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
               {loading ? "Extraindo..." : "Analisar"}
             </Button>
           </div>
+          {loading && (
+            <div className="text-xs font-mono text-muted-foreground animate-pulse">
+              ⏳ Abrindo navegador headless, navegando pela página e interceptando dados da API...
+            </div>
+          )}
         </div>
 
         {/* Results */}
@@ -93,7 +130,7 @@ const Index = () => {
               />
               <Button
                 variant="outline"
-                onClick={() => exportToCSV(data)}
+                onClick={handleExportCSV}
                 className="gap-2 font-mono text-sm"
               >
                 <Download className="h-4 w-4" />
@@ -104,7 +141,7 @@ const Index = () => {
             <PropertyTable data={data} globalFilter={filter} />
 
             <p className="text-[10px] text-muted-foreground font-mono text-center">
-              ★ = Preço/m² 15% abaixo da média · Dados de demonstração
+              ★ = Preço/m² 15% abaixo da média · Dados reais via Playwright
             </p>
           </>
         )}
@@ -117,7 +154,7 @@ const Index = () => {
             <div>
               <p className="text-muted-foreground font-medium">Cole uma URL do QuintoAndar acima</p>
               <p className="text-xs text-muted-foreground/60 font-mono mt-1">
-                Os dados serão extraídos via interceptação da API GraphQL
+                Os dados serão extraídos via interceptação da API GraphQL com Playwright
               </p>
             </div>
           </div>
