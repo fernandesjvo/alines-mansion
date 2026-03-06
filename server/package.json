@@ -10,9 +10,10 @@
     "dependencies": {
         "@fastify/cors": "^10.0.2",
         "fastify": "^5.2.1",
+        "fastify-sse-v2": "^4.2.2",
+        "playwright": "^1.50.1",
         "playwright-extra": "^4.3.6",
-        "puppeteer-extra-plugin-stealth": "^2.11.2",
-        "playwright": "^1.50.1"
+        "puppeteer-extra-plugin-stealth": "^2.11.2"
     },
     "devDependencies": {
         "@types/node": "^22.16.5",

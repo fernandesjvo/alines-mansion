@@ -1,6 +1,6 @@
 import { chromium } from "playwright-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
-import type { Imovel } from "./types.js";
+import type { Imovel, ScrapeProgressEvent } from "./types.js";
 
 // Aplica o plugin stealth para evasão de detecção
 chromium.use(StealthPlugin());
@@ -118,10 +118,20 @@ function isRelevantUrl(reqUrl: string, postData: string): boolean {
  * 4. Rola a página para disparar infinite scroll
  * 5. Fallback robusto via DOM
  */
-export async function scrapeQuintoAndar(url: string, maxScrolls: number = 4): Promise<Imovel[]> {
+export async function scrapeQuintoAndar(
+    url: string,
+    maxScrolls: number = 4,
+    onProgress?: (event: ScrapeProgressEvent) => void
+): Promise<Imovel[]> {
     const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
     const collectedHouses: Map<string, Imovel> = new Map();
     const isComprar = url.includes("comprar");
+
+    const reportProgress = (percent: number, step: ScrapeProgressEvent["step"], message: string, data?: any) => {
+        if (onProgress) onProgress({ percent, step, message, data });
+    };
+
+    reportProgress(5, "init", "Iniciando scraper...", { url, maxScrolls, isComprar });
 
     console.log(`[scraper] Iniciando scraping: ${url}`);
     console.log(`[scraper] Modo: ${isComprar ? "COMPRA" : "ALUGUEL"}`);
@@ -198,6 +208,7 @@ export async function scrapeQuintoAndar(url: string, maxScrolls: number = 4): Pr
 
         // ─── Navegação ─────────────────────────────────────────────
         console.log("[scraper] Navegando para a página...");
+        reportProgress(10, "navigating", "Navegando para a página do QuintoAndar...");
         await page.goto(url, {
             waitUntil: "domcontentloaded",
             timeout: 60000,
@@ -213,8 +224,17 @@ export async function scrapeQuintoAndar(url: string, maxScrolls: number = 4): Pr
         // ─── Scroll para carregar mais imóveis ─────────────────────
         const SCROLL_COUNT = maxScrolls;
         console.log(`[scraper] Iniciando ${SCROLL_COUNT} scrolls...`);
+        reportProgress(20, "scrolling", `Iniciando rolagens na página (0/${SCROLL_COUNT})`, { totalScrolls: SCROLL_COUNT });
 
         for (let i = 0; i < SCROLL_COUNT; i++) {
+            const progressPercent = 20 + Math.floor(((i + 1) / SCROLL_COUNT) * 60); // 20% to 80%
+            reportProgress(
+                progressPercent,
+                "scrolling",
+                `Rolando página e capturando dados (${i + 1}/${SCROLL_COUNT})...\nImóveis coletados: ${collectedHouses.size}`,
+                { currentScroll: i + 1, totalScrolls: SCROLL_COUNT, collected: collectedHouses.size }
+            );
+
             // Scroll gradual (mais realista)
             await page.evaluate(async () => {
                 const totalHeight = document.body.scrollHeight;

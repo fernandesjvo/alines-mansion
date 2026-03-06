@@ -8,12 +8,19 @@ export interface ScrapeResponse {
     error?: string;
 }
 
+export interface ScrapeProgressEvent {
+    percent: number;
+    message: string;
+    step: "init" | "navigating" | "scrolling" | "extracting" | "done" | "error";
+    data?: any;
+}
+
 /**
  * Detecta a URL base da API dependendo do ambiente.
  * - Em desenvolvimento (localhost): usa proxy do Vite → ""
  * - Em produção (GitHub Pages): usa a URL do Render
  */
-function getApiBaseUrl(): string {
+export function getApiBaseUrl(): string {
     if (typeof window !== "undefined" && window.location.hostname === "localhost") {
         return ""; // Proxy do Vite redireciona /api → localhost:3001
     }
@@ -24,13 +31,13 @@ function getApiBaseUrl(): string {
 /**
  * Chama o backend para fazer scraping de uma URL do QuintoAndar.
  */
-export async function scrapeUrl(url: string): Promise<ScrapeResponse> {
+export async function scrapeUrl(url: string, maxScrolls?: number, jobId?: string): Promise<ScrapeResponse> {
     const baseUrl = getApiBaseUrl();
 
     const response = await fetch(`${baseUrl}/api/scrape`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, maxScrolls, jobId }),
     });
 
     if (!response.ok) {
@@ -67,4 +74,30 @@ export async function downloadCSVFromServer(imoveis: Imovel[]): Promise<void> {
     a.download = "imoveis-quintoandar.csv";
     a.click();
     URL.revokeObjectURL(blobUrl);
+}
+
+/**
+ * Conecta ao canal SSE de progresso para um jobId específico.
+ * Retorna uma função para fechar a conexão.
+ */
+export function listenToProgress(jobId: string, onProgress: (event: ScrapeProgressEvent) => void): () => void {
+    const baseUrl = getApiBaseUrl();
+    const eventSource = new EventSource(`${baseUrl}/api/progress/${jobId}`);
+
+    eventSource.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data) as ScrapeProgressEvent;
+            onProgress(data);
+        } catch (err) {
+            console.error("Erro ao parsear evento de progresso:", err);
+        }
+    };
+
+    eventSource.onerror = (err) => {
+        console.error("Erro na conexão SSE:", err);
+    };
+
+    return () => {
+        eventSource.close();
+    };
 }

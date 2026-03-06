@@ -6,9 +6,10 @@ import { PropertyTable } from "@/components/PropertyTable";
 import { StatsCards } from "@/components/StatsCards";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import type { Imovel } from "@/lib/mock-data";
 import { exportToCSV } from "@/lib/csv-export";
-import { scrapeUrl, downloadCSVFromServer } from "@/lib/api";
+import { scrapeUrl, downloadCSVFromServer, listenToProgress, type ScrapeProgressEvent } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
 const Index = () => {
@@ -18,6 +19,7 @@ const Index = () => {
   const [searched, setSearched] = useState(false);
   const [filter, setFilter] = useState("");
   const [deepScan, setDeepScan] = useState(false);
+  const [progressState, setProgressState] = useState<ScrapeProgressEvent | null>(null);
   const { toast } = useToast();
 
   const isProd = import.meta.env.PROD;
@@ -34,10 +36,18 @@ const Index = () => {
 
     setLoading(true);
     setSearched(false);
+    setProgressState({ percent: 0, message: "Conectando ao servidor...", step: "init" });
+
+    const jobId = crypto.randomUUID();
+
+    // Inicia a escuta de eventos SSE antes de disparar a requisição de scrape
+    const closeSSE = listenToProgress(jobId, (event) => {
+      setProgressState(event);
+    });
 
     try {
       const maxScrolls = deepScan ? 50 : 4;
-      const result = await scrapeUrl(url, maxScrolls);
+      const result = await scrapeUrl(url, maxScrolls, jobId);
 
       if (result.success && result.imoveis.length > 0) {
         setData(result.imoveis);
@@ -60,10 +70,12 @@ const Index = () => {
         description: message,
         variant: "destructive",
       });
+      setProgressState((prev) => prev ? { ...prev, percent: 100, message: "Erro na extração", step: "error" } : null);
     } finally {
       setLoading(false);
+      closeSSE(); // Fecha a conexão SSE
     }
-  }, [url, toast]);
+  }, [url, toast, deepScan]);
 
   const handleExportCSV = useCallback(async () => {
     try {
@@ -115,13 +127,22 @@ const Index = () => {
               {loading ? "Extraindo..." : "Analisar"}
             </Button>
           </div>
-          {loading && (
-            <div className="text-xs font-mono text-muted-foreground animate-pulse">
-              ⏳ {deepScan ? "Modo Busca Profunda: Fazendo dezenas de rolagens, pode demorar vários minutos..." : "Abrindo navegador headless, navegando pela página e interceptando dados da API..."}
+          {loading && progressState && (
+            <div className="space-y-2 mt-4">
+              <div className="flex justify-between text-xs font-mono text-muted-foreground">
+                <span>{progressState.message}</span>
+                <span>{progressState.percent}%</span>
+              </div>
+              <Progress value={progressState.percent} className="h-2" />
+              {deepScan && progressState.step === "scrolling" && (
+                <div className="text-[10px] text-muted-foreground/70 font-mono text-right">
+                  Imóveis coletados até agora: {progressState.data?.collected || 0}
+                </div>
+              )}
             </div>
           )}
 
-          <div className="flex items-center space-x-2 pt-2 border-t border-border">
+          <div className="flex items-center space-x-2 pt-2 border-t border-border mt-4">
             <Switch
               id="deep-scan"
               checked={deepScan}

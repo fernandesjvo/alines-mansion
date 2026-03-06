@@ -14,6 +14,14 @@ export interface Imovel {
 export interface ScrapeRequest {
     url: string;
     maxScrolls?: number;
+    jobId?: string;
+}
+
+export interface ScrapeProgressEvent {
+    percent: number;
+    message: string;
+    step: "init" | "navigating" | "scrolling" | "extracting" | "done" | "error";
+    data?: any;
 }
 
 /** Resposta da requisição POST /api/scrape */

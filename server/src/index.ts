@@ -2,11 +2,20 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { scrapeQuintoAndar } from "./scraper.js";
 import { generateCSV } from "./csv.js";
-import type { ScrapeRequest, ScrapeResponse, Imovel } from "./types.js";
+import type { ScrapeRequest, ScrapeResponse, Imovel, ScrapeProgressEvent } from "./types.js";
+import { FastifySSEPlugin } from "fastify-sse-v2";
+import { EventEmitter } from "events";
 
 const server = Fastify({
     logger: true,
 });
+
+// Event emitter global para gerenciar progresso de scraping
+const progressEmitter = new EventEmitter();
+progressEmitter.setMaxListeners(100);
+
+// ─── SSE Plugin ────────────────────────────────────────────────
+await server.register(FastifySSEPlugin);
 
 // ─── CORS ──────────────────────────────────────────────────────
 const allowedOrigins = process.env.ALLOWED_ORIGINS
@@ -17,10 +26,39 @@ await server.register(cors, {
     origin: allowedOrigins,
 });
 
+// ─── GET /api/progress/:jobId ──────────────────────────────────
+// Conexão Server-Sent Events (SSE) para receber progresso em tempo real
+server.get<{ Params: { jobId: string } }>("/api/progress/:jobId", async (request, reply) => {
+    const { jobId } = request.params;
+
+    // Configura o stream SSE
+    reply.sse({
+        id: String(Date.now()),
+        event: "connected",
+        data: JSON.stringify({ message: "Conectado ao canal de progresso" })
+    });
+
+    const onProgress = (data: ScrapeProgressEvent) => {
+        reply.sse({
+            id: String(Date.now()),
+            event: "progress",
+            data: JSON.stringify(data)
+        });
+    };
+
+    // Escuta eventos específicos para este jobId
+    progressEmitter.on(`progress-${jobId}`, onProgress);
+
+    // Quando o cliente desconectar, remove o listener para evitar memory leaks
+    request.raw.on("close", () => {
+        progressEmitter.off(`progress-${jobId}`, onProgress);
+    });
+});
+
 // ─── POST /api/scrape ──────────────────────────────────────────
 // Recebe uma URL do QuintoAndar e retorna os imóveis extraídos
 server.post<{ Body: ScrapeRequest }>("/api/scrape", async (request, reply) => {
-    const { url, maxScrolls } = request.body;
+    const { url, maxScrolls, jobId } = request.body;
 
     if (!url || !url.includes("quintoandar")) {
         return reply.status(400).send({
@@ -33,8 +71,13 @@ server.post<{ Body: ScrapeRequest }>("/api/scrape", async (request, reply) => {
     }
 
     try {
-        server.log.info(`Iniciando scraping: ${url} (maxScrolls: ${maxScrolls || 'default'})`);
-        const imoveis = await scrapeQuintoAndar(url, maxScrolls);
+        server.log.info(`Iniciando scraping: ${url} (maxScrolls: ${maxScrolls || 'default'}, jobId: ${jobId || 'none'})`);
+
+        const onProgress = jobId
+            ? (event: ScrapeProgressEvent) => progressEmitter.emit(`progress-${jobId}`, event)
+            : undefined;
+
+        const imoveis = await scrapeQuintoAndar(url, maxScrolls, onProgress);
 
         const response: ScrapeResponse = {
             success: true,
