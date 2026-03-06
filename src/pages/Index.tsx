@@ -248,8 +248,9 @@ const Index = () => {
                   onChange={(e) => setFilter(e.target.value)}
                   className="max-w-[300px] font-mono text-sm"
                 />
-                <Button variant="outline" size="icon" onClick={handleCheckAvailability} disabled={loading} title="Verificar Disponibilidade">
+                <Button variant="outline" onClick={handleCheckAvailability} className="gap-2 font-mono text-sm" disabled={loading} title="Verificar Disponibilidade">
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  {loading ? "Atualizando..." : "Atualizar disponibilidade"}
                 </Button>
                 <Button variant="outline" onClick={handleExportCSV} className="gap-2 font-mono" disabled={loading}>
                   <Download className="h-4 w-4" />
