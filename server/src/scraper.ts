@@ -203,15 +203,16 @@ export async function scrapeQuintoAndar(url: string): Promise<Imovel[]> {
             timeout: 60000,
         });
 
-        // Espera mais tempo para que as requisições de API sejam feitas
-        await humanDelay(5000, 8000);
+        // Espera tempo suficiente para as requisições principais
+        await humanDelay(2500, 4000);
 
         console.log(
             `[scraper] Página carregada. ${capturedResponses} respostas JSON capturadas, ${collectedHouses.size} imóveis até agora.`
         );
 
         // ─── Scroll para carregar mais imóveis ─────────────────────
-        const SCROLL_COUNT = 8;
+        // Reduzido para 4 para evitar timeout de 60s do Render (free tier)
+        const SCROLL_COUNT = 4;
         console.log(`[scraper] Iniciando ${SCROLL_COUNT} scrolls...`);
 
         for (let i = 0; i < SCROLL_COUNT; i++) {
@@ -227,7 +228,7 @@ export async function scrapeQuintoAndar(url: string): Promise<Imovel[]> {
                 window.scrollTo({ top: targetScroll, behavior: "smooth" });
             });
 
-            await humanDelay(2500, 4500);
+            await humanDelay(1500, 2500);
 
             // Tenta clicar em botões de "carregar mais" / "ver mais"
             try {
@@ -251,7 +252,7 @@ export async function scrapeQuintoAndar(url: string): Promise<Imovel[]> {
                         if (await btn.isVisible({ timeout: 500 })) {
                             await btn.click();
                             console.log(`[scraper] Clicou em: ${selector}`);
-                            await humanDelay(3000, 5000);
+                            await humanDelay(1500, 2500);
                             break;
                         }
                     } catch {
@@ -269,11 +270,11 @@ export async function scrapeQuintoAndar(url: string): Promise<Imovel[]> {
 
         // Scroll final até o topo e volta para disparar possíveis lazy loads
         await page.evaluate(() => window.scrollTo({ top: 0, behavior: "smooth" }));
-        await humanDelay(1000, 2000);
+        await humanDelay(500, 1000);
         await page.evaluate(() =>
             window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" })
         );
-        await humanDelay(3000, 5000);
+        await humanDelay(1500, 2500);
 
         console.log(
             `[scraper] Pós-scroll: ${capturedResponses} respostas, ${collectedHouses.size} imóveis.`
