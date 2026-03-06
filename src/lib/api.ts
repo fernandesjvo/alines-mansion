@@ -84,14 +84,14 @@ export function listenToProgress(jobId: string, onProgress: (event: ScrapeProgre
     const baseUrl = getApiBaseUrl();
     const eventSource = new EventSource(`${baseUrl}/api/progress/${jobId}`);
 
-    eventSource.onmessage = (event) => {
+    eventSource.addEventListener("progress", (event) => {
         try {
             const data = JSON.parse(event.data) as ScrapeProgressEvent;
             onProgress(data);
         } catch (err) {
             console.error("Erro ao parsear evento de progresso:", err);
         }
-    };
+    });
 
     eventSource.onerror = (err) => {
         console.error("Erro na conexão SSE:", err);
