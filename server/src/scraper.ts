@@ -562,54 +562,55 @@ async function extractFromDOM(
                     text.match(/(\d+)\s*qto/i);
                 const quartos = quartoMatch ? parseInt(quartoMatch[1]) : 0;
 
-                // Extrai bairro
+                // Extrai bairro — Fonte: URL do próprio link (100% livre de ruído do DOM)
+                // Formato real: /imovel/ID/comprar/kitnet-1-quarto-bela-vista-sao-paulo?query_params
                 let bairro = "";
+                {
+                    const cleanHref = href.split('?')[0];
+                    const hrefParts = cleanHref.split('/');
+                    const modeIdx = hrefParts.findIndex(p => p === 'comprar' || p === 'alugar');
 
-                // Tentativa A: Pelo DOM, buscando elementos de texto curtos
-                const addressEl = card?.querySelector(
-                    '[data-testid="house-card-address"], [class*="address"], [class*="Address"], [class*="neighborhood"]'
-                );
-                if (addressEl) {
-                    // Pega o primeiro span/texto pra evitar agrupar blocos gigantes do QuintoAndar
-                    const firstSpan = addressEl.querySelector('span, p') || addressEl;
-                    // Limpa \u00A0, tabulações e afins
-                    let rawText = firstSpan.textContent?.replace(/[\u00A0\t\n\r]/g, ' ').trim() || "";
+                    if (modeIdx >= 0 && modeIdx + 1 < hrefParts.length) {
+                        let slug = hrefParts[modeIdx + 1];
 
-                    // QuintoAndar as vezes junta "1 QuartoBela Vista" ou "1 Quarto Bela Vista"
-                    // Strip aggressive para remover número + palavra Quarto(s) do começo
-                    bairro = rawText.replace(/^\s*\d+\s*Quartos?\s*/i, '').split(',')[0].trim();
-                }
-
-                // Tentativa B: Fallback quebrando a própria URL (ex: /comprar/apartamento-bela-vista-sao-paulo-sp)
-                if (!bairro || bairro.length > 40 || bairro.toLowerCase().includes("quarto")) {
-                    const urlParts = href.split('/');
-                    const slugIndex = urlParts.findIndex(p => p === 'comprar' || p === 'alugar') + 1;
-                    if (slugIndex > 0 && slugIndex < urlParts.length) {
-                        const slug = urlParts[slugIndex];
-                        // Mapeia os prefixos de tipo de imóvel para expurgar da URL
-                        const typePrefixes = "apartamento|casa|studio|loja|sala-comercial|kitnet|cobertura|flat|lote-terreno|ponto-comercial|fazenda-sitio-chacara";
-                        const slugRegex = new RegExp(`^(?:${typePrefixes})-(.+?)-(?:sao-paulo|rio-de-janeiro|belo-horizonte|curitiba|porto-alegre|campinas|brasilia|goiania)`, 'i');
-
-                        const slugMatch = slug.match(slugRegex);
-                        if (slugMatch) {
-                            bairro = slugMatch[1].replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                        } else {
-                            // Se a regex falhar (cidade diferente), tenta pelo menos arrancar o prefixo do tipo
-                            const genericMatch = slug.match(new RegExp(`^(?:${typePrefixes})-(.+)`, 'i'));
-                            if (genericMatch) {
-                                // Pega o que sobrou, arranca a última palavra (que costuma ser a sigla do estado) e a cidade
-                                let rawBairro = genericMatch[1].replace(/-/g, ' ');
-                                // É um fallback aproximado, não perfeito, mas muito melhor que o card sujo
-                                bairro = rawBairro.replace(/\b\w/g, l => l.toUpperCase()).substring(0, 35).trim();
+                        // Remove city suffix (sorted longest-first to avoid partial matches)
+                        const cities = [
+                            "sao-bernardo-do-campo", "sao-caetano-do-sul", "sao-jose-dos-campos",
+                            "centro-historico-de-sao-paulo", "rio-de-janeiro", "belo-horizonte",
+                            "porto-alegre", "novo-hamburgo", "taboao-da-serra", "santo-andre",
+                            "praia-grande", "nova-lima", "caxias-do-sul", "sao-leopoldo",
+                            "sao-paulo", "curitiba", "campinas", "brasilia", "goiania", "guarulhos",
+                            "osasco", "niteroi", "salvador", "recife", "fortaleza", "florianopolis",
+                            "vitoria", "barueri", "hortolandia", "ribeirao-preto", "diadema",
+                            "jundiai", "sorocaba", "contagem", "betim", "canoas", "joinville",
+                            "sao-jose", "santos"
+                        ];
+                        for (const c of cities) {
+                            if (slug.endsWith('-' + c)) {
+                                slug = slug.substring(0, slug.length - c.length - 1);
+                                break;
                             }
                         }
+
+                        // Remove room count patterns like "1-quarto", "2-quartos"
+                        slug = slug.replace(/-?\d+-quartos?/i, '');
+
+                        // Remove type prefix
+                        const types = [
+                            "apartamento", "casa", "studio", "loja", "sala-comercial", "kitnet",
+                            "cobertura", "flat", "lote-terreno", "ponto-comercial", "fazenda-sitio-chacara"
+                        ];
+                        for (const t of types) {
+                            if (slug.startsWith(t + '-')) { slug = slug.substring(t.length + 1); break; }
+                            else if (slug === t) { slug = ''; break; }
+                        }
+
+                        // Clean up and Title Case
+                        bairro = slug.replace(/^-+|-+$/g, '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()).trim();
                     }
                 }
 
-                // Corta se ainda for muito longo e limpa quebras de linha/texto de interface
-                if (bairro.length > 40) {
-                    bairro = bairro.replace(/apartamentos para comprar.*/i, '').substring(0, 40).trim();
-                }
+                if (bairro.length > 50) bairro = bairro.substring(0, 50).trim();
 
                 if (price > 0 || area > 0) {
                     results.push({
