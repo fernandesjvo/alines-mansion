@@ -26,9 +26,9 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copia package files e instala dependências
+# Copia package files e instala TODAS as dependências (inclui typescript)
 COPY package.json package-lock.json ./
-RUN npm ci --production
+RUN npm ci
 
 # Instala Chromium para Playwright
 RUN npx playwright install chromium
@@ -39,6 +39,9 @@ COPY tsconfig.json ./
 
 # Build TypeScript
 RUN npx tsc
+
+# Remove devDependencies após o build para reduzir tamanho da imagem
+RUN npm prune --production
 
 # Porta do servidor
 ENV PORT=3001
