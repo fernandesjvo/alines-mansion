@@ -163,8 +163,8 @@ const Index = () => {
           <div className="flex items-center gap-2">
             <Zap className="h-5 w-5 text-primary" />
             <h1 className="text-lg font-bold font-mono tracking-tight">
-              <span className="text-primary">QA</span>
-              <span className="text-muted-foreground">_scraper</span>
+              <span className="text-primary">Aline's</span>
+              <span className="text-muted-foreground"> Mansion</span>
             </h1>
           </div>
           <span className="text-[10px] font-mono text-muted-foreground border border-border rounded px-2 py-0.5">
