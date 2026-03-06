@@ -1,9 +1,11 @@
 import { useState, useCallback } from "react";
-import { Search, Download, AlertTriangle, Loader2, Zap } from "lucide-react";
+import { Search, Download, AlertTriangle, Loader2, Zap, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PropertyTable } from "@/components/PropertyTable";
 import { StatsCards } from "@/components/StatsCards";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import type { Imovel } from "@/lib/mock-data";
 import { exportToCSV } from "@/lib/csv-export";
 import { scrapeUrl, downloadCSVFromServer } from "@/lib/api";
@@ -15,7 +17,10 @@ const Index = () => {
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [filter, setFilter] = useState("");
+  const [deepScan, setDeepScan] = useState(false);
   const { toast } = useToast();
+
+  const isProd = import.meta.env.PROD;
 
   const handleAnalyze = useCallback(async () => {
     if (!url.includes("quintoandar")) {
@@ -31,7 +36,8 @@ const Index = () => {
     setSearched(false);
 
     try {
-      const result = await scrapeUrl(url);
+      const maxScrolls = deepScan ? 50 : 4;
+      const result = await scrapeUrl(url, maxScrolls);
 
       if (result.success && result.imoveis.length > 0) {
         setData(result.imoveis);
@@ -111,9 +117,27 @@ const Index = () => {
           </div>
           {loading && (
             <div className="text-xs font-mono text-muted-foreground animate-pulse">
-              ⏳ Abrindo navegador headless, navegando pela página e interceptando dados da API...
+              ⏳ {deepScan ? "Modo Busca Profunda: Fazendo dezenas de rolagens, pode demorar vários minutos..." : "Abrindo navegador headless, navegando pela página e interceptando dados da API..."}
             </div>
           )}
+
+          <div className="flex items-center space-x-2 pt-2 border-t border-border">
+            <Switch
+              id="deep-scan"
+              checked={deepScan}
+              onCheckedChange={setDeepScan}
+              disabled={isProd || loading}
+            />
+            <Label htmlFor="deep-scan" className="text-sm font-mono flex items-center gap-2 cursor-pointer">
+              Busca Profunda (Extrair todos)
+              {isProd && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1 bg-muted px-2 py-0.5 rounded">
+                  <Info className="h-3 w-3" />
+                  Apenas rodando localmente
+                </span>
+              )}
+            </Label>
+          </div>
         </div>
 
         {/* Results */}

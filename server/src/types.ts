@@ -13,6 +13,7 @@ export interface Imovel {
 /** Corpo da requisição POST /api/scrape */
 export interface ScrapeRequest {
     url: string;
+    maxScrolls?: number;
 }
 
 /** Resposta da requisição POST /api/scrape */

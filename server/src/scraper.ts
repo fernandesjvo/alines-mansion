@@ -118,7 +118,7 @@ function isRelevantUrl(reqUrl: string, postData: string): boolean {
  * 4. Rola a página para disparar infinite scroll
  * 5. Fallback robusto via DOM
  */
-export async function scrapeQuintoAndar(url: string): Promise<Imovel[]> {
+export async function scrapeQuintoAndar(url: string, maxScrolls: number = 4): Promise<Imovel[]> {
     const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
     const collectedHouses: Map<string, Imovel> = new Map();
     const isComprar = url.includes("comprar");
@@ -211,8 +211,7 @@ export async function scrapeQuintoAndar(url: string): Promise<Imovel[]> {
         );
 
         // ─── Scroll para carregar mais imóveis ─────────────────────
-        // Reduzido para 4 para evitar timeout de 60s do Render (free tier)
-        const SCROLL_COUNT = 4;
+        const SCROLL_COUNT = maxScrolls;
         console.log(`[scraper] Iniciando ${SCROLL_COUNT} scrolls...`);
 
         for (let i = 0; i < SCROLL_COUNT; i++) {

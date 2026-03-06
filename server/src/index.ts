@@ -20,7 +20,7 @@ await server.register(cors, {
 // ─── POST /api/scrape ──────────────────────────────────────────
 // Recebe uma URL do QuintoAndar e retorna os imóveis extraídos
 server.post<{ Body: ScrapeRequest }>("/api/scrape", async (request, reply) => {
-    const { url } = request.body;
+    const { url, maxScrolls } = request.body;
 
     if (!url || !url.includes("quintoandar")) {
         return reply.status(400).send({
@@ -33,8 +33,8 @@ server.post<{ Body: ScrapeRequest }>("/api/scrape", async (request, reply) => {
     }
 
     try {
-        server.log.info(`Iniciando scraping: ${url}`);
-        const imoveis = await scrapeQuintoAndar(url);
+        server.log.info(`Iniciando scraping: ${url} (maxScrolls: ${maxScrolls || 'default'})`);
+        const imoveis = await scrapeQuintoAndar(url, maxScrolls);
 
         const response: ScrapeResponse = {
             success: true,
