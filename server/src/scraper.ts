@@ -572,21 +572,36 @@ async function extractFromDOM(
                 if (addressEl) {
                     // Pega o primeiro span/texto pra evitar agrupar blocos gigantes do QuintoAndar
                     const firstSpan = addressEl.querySelector('span, p') || addressEl;
-                    bairro = firstSpan.textContent?.split(',')[0].trim() || "";
+                    // Limpa \u00A0, tabulações e afins
+                    let rawText = firstSpan.textContent?.replace(/[\u00A0\t\n\r]/g, ' ').trim() || "";
+
                     // QuintoAndar as vezes junta "1 QuartoBela Vista" ou "1 Quarto Bela Vista"
-                    bairro = bairro.replace(/^\d+\s*Quartos?\s*/i, '').trim();
+                    // Strip aggressive para remover número + palavra Quarto(s) do começo
+                    bairro = rawText.replace(/^\s*\d+\s*Quartos?\s*/i, '').split(',')[0].trim();
                 }
 
                 // Tentativa B: Fallback quebrando a própria URL (ex: /comprar/apartamento-bela-vista-sao-paulo-sp)
-                if (!bairro || bairro.length > 40) {
+                if (!bairro || bairro.length > 40 || bairro.toLowerCase().includes("quarto")) {
                     const urlParts = href.split('/');
                     const slugIndex = urlParts.findIndex(p => p === 'comprar' || p === 'alugar') + 1;
                     if (slugIndex > 0 && slugIndex < urlParts.length) {
                         const slug = urlParts[slugIndex];
-                        // Tenta extrair o "meio" ignorando o tipo inicial e as cidades comuns finais
-                        const slugMatch = slug.match(/^[a-z]+-(.+?)-(?:sao-paulo|rio-de-janeiro|belo-horizonte|curitiba|porto-alegre|campinas|brasilia|goiania)/i);
+                        // Mapeia os prefixos de tipo de imóvel para expurgar da URL
+                        const typePrefixes = "apartamento|casa|studio|loja|sala-comercial|kitnet|cobertura|flat|lote-terreno|ponto-comercial|fazenda-sitio-chacara";
+                        const slugRegex = new RegExp(`^(?:${typePrefixes})-(.+?)-(?:sao-paulo|rio-de-janeiro|belo-horizonte|curitiba|porto-alegre|campinas|brasilia|goiania)`, 'i');
+
+                        const slugMatch = slug.match(slugRegex);
                         if (slugMatch) {
                             bairro = slugMatch[1].replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                        } else {
+                            // Se a regex falhar (cidade diferente), tenta pelo menos arrancar o prefixo do tipo
+                            const genericMatch = slug.match(new RegExp(`^(?:${typePrefixes})-(.+)`, 'i'));
+                            if (genericMatch) {
+                                // Pega o que sobrou, arranca a última palavra (que costuma ser a sigla do estado) e a cidade
+                                let rawBairro = genericMatch[1].replace(/-/g, ' ');
+                                // É um fallback aproximado, não perfeito, mas muito melhor que o card sujo
+                                bairro = rawBairro.replace(/\b\w/g, l => l.toUpperCase()).substring(0, 35).trim();
+                            }
                         }
                     }
                 }
