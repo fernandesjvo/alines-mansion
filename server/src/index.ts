@@ -9,8 +9,12 @@ const server = Fastify({
 });
 
 // ─── CORS ──────────────────────────────────────────────────────
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
+    : true; // Em dev, permite qualquer origem
+
 await server.register(cors, {
-    origin: true, // Permite qualquer origem em desenvolvimento
+    origin: allowedOrigins,
 });
 
 // ─── POST /api/scrape ──────────────────────────────────────────

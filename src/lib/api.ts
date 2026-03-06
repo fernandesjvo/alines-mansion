@@ -9,11 +9,25 @@ export interface ScrapeResponse {
 }
 
 /**
+ * Detecta a URL base da API dependendo do ambiente.
+ * - Em desenvolvimento (localhost): usa proxy do Vite → ""
+ * - Em produção (GitHub Pages): usa a URL do Render
+ */
+function getApiBaseUrl(): string {
+    if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+        return ""; // Proxy do Vite redireciona /api → localhost:3001
+    }
+    // Em produção, usa a variável de ambiente ou URL padrão do Render
+    return import.meta.env.VITE_API_URL || "https://alines-mansion-api.onrender.com";
+}
+
+/**
  * Chama o backend para fazer scraping de uma URL do QuintoAndar.
- * O proxy do Vite redireciona /api → http://localhost:3001
  */
 export async function scrapeUrl(url: string): Promise<ScrapeResponse> {
-    const response = await fetch("/api/scrape", {
+    const baseUrl = getApiBaseUrl();
+
+    const response = await fetch(`${baseUrl}/api/scrape`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
@@ -34,7 +48,9 @@ export async function scrapeUrl(url: string): Promise<ScrapeResponse> {
  * Envia os imóveis para o servidor gerar o CSV.
  */
 export async function downloadCSVFromServer(imoveis: Imovel[]): Promise<void> {
-    const response = await fetch("/api/export/csv", {
+    const baseUrl = getApiBaseUrl();
+
+    const response = await fetch(`${baseUrl}/api/export/csv`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imoveis }),

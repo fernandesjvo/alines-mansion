@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: alines-mansion-api
+    runtime: docker
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: ./server
+    plan: free
+    envVars:
+      - key: PORT
+        value: "3001"
+      - key: ALLOWED_ORIGINS
+        value: "https://fernandesjvo.github.io"
