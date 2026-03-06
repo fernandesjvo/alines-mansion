@@ -507,7 +507,10 @@ async function extractFromDOM(
         allLinks.forEach((anchor) => {
             try {
                 const href = (anchor as HTMLAnchorElement).href || "";
-                const idMatch = href.match(/imovel\/([a-zA-Z0-9_-]+)/);
+
+                // O ID do imóvel no QuintoAndar é estritamente numérico (7 a 12 dígitos)
+                // Isso previne a captura de links de SEO do footer (ex: /imovel/liberdade-sao-paulo-sp-brasil)
+                const idMatch = href.match(/imovel\/(\d{7,12})/);
                 if (!idMatch) return;
 
                 const id = idMatch[1];
@@ -522,17 +525,18 @@ async function extractFromDOM(
                 }
 
                 // --- 2. Cache Miss: Fallback para Extração do Texto do DOM (Menos Preciso) ---
-                const card =
+                let card =
+                    anchor.closest('[data-testid="house-card"]') ||
                     anchor.closest('[class*="card"]') ||
                     anchor.closest('[class*="Card"]') ||
                     anchor.closest('[class*="listing"]') ||
-                    anchor.closest('[class*="Listing"]') ||
-                    anchor.closest('[class*="house"]') ||
-                    anchor.closest('[class*="House"]') ||
-                    anchor.closest('[role="listitem"]') ||
-                    anchor.closest("li") ||
-                    anchor.closest("article") ||
+                    anchor.closest('li') ||
                     anchor;
+
+                // Proteção contra containers gigantescos (ex: selecionou a página/lista inteira)
+                if (card && card.textContent && card.textContent.length > 1000) {
+                    card = anchor.parentElement || anchor; // Reduz o escopo para evitar vazar pro Footer
+                }
 
                 const text = card?.textContent || "";
 
@@ -560,11 +564,36 @@ async function extractFromDOM(
 
                 // Extrai bairro
                 let bairro = "";
+
+                // Tentativa A: Pelo DOM, buscando elementos de texto curtos
                 const addressEl = card?.querySelector(
-                    '[class*="address"], [class*="Address"], [class*="neighborhood"], [class*="Neighborhood"], [class*="location"], [class*="Location"], [class*="region"], [class*="Region"]'
+                    '[data-testid="house-card-address"], [class*="address"], [class*="Address"], [class*="neighborhood"]'
                 );
                 if (addressEl) {
-                    bairro = addressEl.textContent?.trim() || "";
+                    // Pega o primeiro span/texto pra evitar agrupar blocos gigantes do QuintoAndar
+                    const firstSpan = addressEl.querySelector('span, p') || addressEl;
+                    bairro = firstSpan.textContent?.split(',')[0].trim() || "";
+                    // QuintoAndar as vezes junta "1 QuartoBela Vista" ou "1 Quarto Bela Vista"
+                    bairro = bairro.replace(/^\d+\s*Quartos?\s*/i, '').trim();
+                }
+
+                // Tentativa B: Fallback quebrando a própria URL (ex: /comprar/apartamento-bela-vista-sao-paulo-sp)
+                if (!bairro || bairro.length > 40) {
+                    const urlParts = href.split('/');
+                    const slugIndex = urlParts.findIndex(p => p === 'comprar' || p === 'alugar') + 1;
+                    if (slugIndex > 0 && slugIndex < urlParts.length) {
+                        const slug = urlParts[slugIndex];
+                        // Tenta extrair o "meio" ignorando o tipo inicial e as cidades comuns finais
+                        const slugMatch = slug.match(/^[a-z]+-(.+?)-(?:sao-paulo|rio-de-janeiro|belo-horizonte|curitiba|porto-alegre|campinas|brasilia|goiania)/i);
+                        if (slugMatch) {
+                            bairro = slugMatch[1].replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                        }
+                    }
+                }
+
+                // Corta se ainda for muito longo e limpa quebras de linha/texto de interface
+                if (bairro.length > 40) {
+                    bairro = bairro.replace(/apartamentos para comprar.*/i, '').substring(0, 40).trim();
                 }
 
                 if (price > 0 || area > 0) {
