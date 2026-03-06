@@ -78,14 +78,23 @@ const Index = () => {
   }, [url, toast, deepScan]);
 
   const handleExportCSV = useCallback(async () => {
+    // Aplica o filtro de tela aos dados antes de exportar
+    const filteredData = filter
+      ? data.filter((item) =>
+        Object.values(item).some((val) =>
+          String(val).toLowerCase().includes(filter.toLowerCase())
+        )
+      )
+      : data;
+
     try {
       // Tenta exportar via backend primeiro
-      await downloadCSVFromServer(data);
+      await downloadCSVFromServer(filteredData);
     } catch {
       // Fallback: exporta no client-side
-      exportToCSV(data);
+      exportToCSV(filteredData);
     }
-  }, [data]);
+  }, [data, filter]);
 
   return (
     <div className="min-h-screen bg-background">
