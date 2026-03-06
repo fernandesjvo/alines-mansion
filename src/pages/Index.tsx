@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Search, Download, AlertTriangle, Loader2, Zap, Info } from "lucide-react";
+import { Search, Download, AlertTriangle, Loader2, Zap, Info, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PropertyTable } from "@/components/PropertyTable";
@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import type { Imovel } from "@/lib/mock-data";
 import { exportToCSV } from "@/lib/csv-export";
-import { scrapeUrl, downloadCSVFromServer, listenToProgress, type ScrapeProgressEvent } from "@/lib/api";
+import { scrapeUrl, downloadCSVFromServer, listenToProgress, checkAvailability, type ScrapeProgressEvent } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
 const Index = () => {
@@ -76,6 +76,65 @@ const Index = () => {
       closeSSE(); // Fecha a conexão SSE
     }
   }, [url, toast, deepScan]);
+
+  const handleCheckAvailability = useCallback(async () => {
+    if (data.length === 0) return;
+
+    setLoading(true);
+    setProgressState({ percent: 0, message: "Conectando ao servidor...", step: "init" });
+
+    const jobId = crypto.randomUUID();
+
+    const closeSSE = listenToProgress(jobId, (event) => {
+      setProgressState(event);
+    });
+
+    try {
+      // Extrai os links dos imóveis atualmente na tela (respeitando filtro de busca se houver)
+      const currentData = filter
+        ? data.filter((item) =>
+          Object.values(item).some((val) =>
+            String(val).toLowerCase().includes(filter.toLowerCase())
+          )
+        )
+        : data;
+
+      const urls = currentData.map(i => i.link);
+      const res = await checkAvailability(urls, jobId);
+
+      if (res.success && res.results) {
+        // Mantém apenas os imóveis que estão marcados como isAvailable = true
+        const availableData = data.filter(item => {
+          // Se o item estava na verificação, olha no resultado. 
+          // Se não estava (ex: filtrado fora), mantém.
+          if (res.results[item.link] !== undefined) {
+            return res.results[item.link] === true;
+          }
+          return true;
+        });
+
+        const removedCount = data.length - availableData.length;
+        setData(availableData);
+
+        toast({
+          title: "Verificação Concluída",
+          description: removedCount > 0
+            ? `${removedCount} imóveis indisponíveis foram removidos da lista.`
+            : `Todos os imóveis verificados estão disponíveis!`,
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Erro na verificação",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+      setProgressState((prev) => prev ? { ...prev, percent: 100, message: "Erro na verificação", step: "error" } : null);
+    } finally {
+      setLoading(false);
+      closeSSE();
+    }
+  }, [data, filter, toast]);
 
   const handleExportCSV = useCallback(async () => {
     // Aplica o filtro de tela aos dados antes de exportar
@@ -175,24 +234,29 @@ const Index = () => {
           <>
             <StatsCards data={data} />
 
-            <div className="flex items-center justify-between">
-              <Input
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                placeholder="Filtrar por bairro, tipo..."
-                className="max-w-xs font-mono text-sm bg-background border-border placeholder:text-muted-foreground/50"
-              />
-              <Button
-                variant="outline"
-                onClick={handleExportCSV}
-                className="gap-2 font-mono text-sm"
-              >
-                <Download className="h-4 w-4" />
-                Exportar CSV
-              </Button>
-            </div>
-
-            <PropertyTable data={data} globalFilter={filter} />
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+              <h2 className="text-xl font-bold font-mono tracking-tight flex items-center gap-2">
+                Resultados da Extração
+                <span className="text-sm font-normal text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">
+                  {data.length}
+                </span>
+              </h2>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <Input
+                  placeholder="Filtrar por endereço, tipo, ID..."
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  className="max-w-[300px] font-mono text-sm"
+                />
+                <Button variant="outline" size="icon" onClick={handleCheckAvailability} disabled={loading} title="Verificar Disponibilidade">
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                </Button>
+                <Button variant="outline" onClick={handleExportCSV} className="gap-2 font-mono" disabled={loading}>
+                  <Download className="h-4 w-4" />
+                  Exportar CSV
+                </Button>
+              </div>
+            </div>    <PropertyTable data={data} globalFilter={filter} />
 
             <p className="text-[10px] text-muted-foreground font-mono text-center">
               ★ = Preço/m² 15% abaixo da média · Dados reais via Playwright

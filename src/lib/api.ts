@@ -101,3 +101,25 @@ export function listenToProgress(jobId: string, onProgress: (event: ScrapeProgre
         eventSource.close();
     };
 }
+
+/**
+ * Envia uma lista de URLs para o servidor verificar disponibilidade.
+ */
+export async function checkAvailability(urls: string[], jobId?: string): Promise<{ success: boolean; results: Record<string, boolean>; error?: string }> {
+    const baseUrl = getApiBaseUrl();
+
+    const response = await fetch(`${baseUrl}/api/check-availability`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ urls, jobId }),
+    });
+
+    if (!response.ok) {
+        const errorBody = await response.json().catch(() => null);
+        throw new Error(
+            errorBody?.error || `Erro no servidor: ${response.status} ${response.statusText}`
+        );
+    }
+
+    return response.json();
+}

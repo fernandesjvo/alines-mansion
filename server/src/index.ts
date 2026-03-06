@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { scrapeQuintoAndar } from "./scraper.js";
+import { checkAvailabilityBatch } from "./checker.js";
 import { generateCSV } from "./csv.js";
 import type { ScrapeRequest, ScrapeResponse, Imovel, ScrapeProgressEvent } from "./types.js";
 import { FastifySSEPlugin } from "fastify-sse-v2";
@@ -98,6 +99,47 @@ server.post<{ Body: ScrapeRequest }>("/api/scrape", async (request, reply) => {
             scrapedAt: new Date().toISOString(),
             error: `Falha no scraping: ${message}`,
         } satisfies ScrapeResponse);
+    }
+});
+
+// ─── POST /api/check-availability ──────────────────────────────
+// Recebe uma lista de URLs de imóveis e verifica disponibilidade
+interface CheckReq {
+    urls: string[];
+    jobId?: string;
+}
+
+server.post<{ Body: CheckReq }>("/api/check-availability", async (request, reply) => {
+    const { urls, jobId } = request.body;
+
+    if (!Array.isArray(urls) || urls.length === 0) {
+        return reply.status(400).send({
+            success: false,
+            error: "Lista de URLs inválida vazia.",
+        });
+    }
+
+    try {
+        server.log.info(`Iniciando checagem de disponibilidade para ${urls.length} imóveis (jobId: ${jobId || 'none'})`);
+
+        const onProgress = jobId
+            ? (event: ScrapeProgressEvent) => progressEmitter.emit(`progress-${jobId}`, event)
+            : undefined;
+
+        const results = await checkAvailabilityBatch(urls, onProgress);
+
+        return reply.send({
+            success: true,
+            results,
+        });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "Erro desconhecido na checagem";
+        server.log.error(`Erro na checagem: ${message}`);
+
+        return reply.status(500).send({
+            success: false,
+            error: `Falha na checagem de disponibilidade: ${message}`,
+        });
     }
 });
 
