@@ -108,15 +108,80 @@ function isRelevantUrl(reqUrl: string, postData: string): boolean {
     return urlMatch || postMatch;
 }
 
+interface UrlFilters {
+    areaMin?: number;
+    areaMax?: number;
+    priceMin?: number;
+    priceMax?: number;
+    bedroomsMin?: number;
+    bedroomsMax?: number;
+}
+
+/**
+ * Parseia os filtros diretamente da URL do QuintoAndar.
+ * Exemplos de segmentos:
+ *   de-33-a-108-m2          → area 33..108
+ *   de-150000-a-400000-venda → preço venda 150k..400k
+ *   de-1500-a-4000-aluguel   → preço aluguel 1500..4000
+ *   de-1-a-3-quartos         → quartos 1..3
+ */
+function parseUrlFilters(url: string): UrlFilters {
+    const filters: UrlFilters = {};
+    const segments = decodeURIComponent(url).split('/');
+
+    for (const seg of segments) {
+        // Área: de-33-a-108-m2
+        const areaMatch = seg.match(/^de-(\d+)-a-(\d+)-m2$/i);
+        if (areaMatch) {
+            filters.areaMin = parseInt(areaMatch[1]);
+            filters.areaMax = parseInt(areaMatch[2]);
+            continue;
+        }
+        // Preço de venda: de-150000-a-400000-venda
+        const vendaMatch = seg.match(/^de-(\d+)-a-(\d+)-venda$/i);
+        if (vendaMatch) {
+            filters.priceMin = parseInt(vendaMatch[1]);
+            filters.priceMax = parseInt(vendaMatch[2]);
+            continue;
+        }
+        // Preço de aluguel: de-1500-a-4000-aluguel
+        const aluguelMatch = seg.match(/^de-(\d+)-a-(\d+)-aluguel$/i);
+        if (aluguelMatch) {
+            filters.priceMin = parseInt(aluguelMatch[1]);
+            filters.priceMax = parseInt(aluguelMatch[2]);
+            continue;
+        }
+        // Quartos: de-1-a-3-quartos
+        const quartosMatch = seg.match(/^de-(\d+)-a-(\d+)-quartos$/i);
+        if (quartosMatch) {
+            filters.bedroomsMin = parseInt(quartosMatch[1]);
+            filters.bedroomsMax = parseInt(quartosMatch[2]);
+            continue;
+        }
+    }
+
+    return filters;
+}
+
+/**
+ * Aplica filtros rígidos nos resultados extraídos.
+ * Remove qualquer imóvel que viole os filtros da URL do usuário.
+ */
+function applyUrlFilters(houses: Imovel[], filters: UrlFilters): Imovel[] {
+    return houses.filter(h => {
+        // Só filtra se temos o dado (> 0) E o filtro está definido
+        if (filters.areaMin !== undefined && h.areaMt2 > 0 && h.areaMt2 < filters.areaMin) return false;
+        if (filters.areaMax !== undefined && h.areaMt2 > 0 && h.areaMt2 > filters.areaMax) return false;
+        if (filters.priceMin !== undefined && h.precoTotal > 0 && h.precoTotal < filters.priceMin) return false;
+        if (filters.priceMax !== undefined && h.precoTotal > 0 && h.precoTotal > filters.priceMax) return false;
+        if (filters.bedroomsMin !== undefined && h.quartos > 0 && h.quartos < filters.bedroomsMin) return false;
+        if (filters.bedroomsMax !== undefined && h.quartos > 0 && h.quartos > filters.bedroomsMax) return false;
+        return true;
+    });
+}
+
 /**
  * Realiza o scraping de uma URL do QuintoAndar.
- *
- * Estratégia ampliada:
- * 1. Abre browser headless com stealth plugin
- * 2. Captura TODAS as respostas JSON da rede
- * 3. Extrai recursivamente qualquer objeto que pareça um imóvel
- * 4. Rola a página para disparar infinite scroll
- * 5. Fallback robusto via DOM
  */
 export async function scrapeQuintoAndar(
     url: string,
@@ -269,7 +334,17 @@ export async function scrapeQuintoAndar(
 
         await context.close();
 
-        return strictHouses;
+        // ─── 5. Aplicar Filtros Rígidos da URL ──────────────────────
+        const filters = parseUrlFilters(url);
+        const filteredHouses = applyUrlFilters(strictHouses, filters);
+        const removed = strictHouses.length - filteredHouses.length;
+        if (removed > 0) {
+            console.log(`[scraper] ✂ Filtros da URL removeram ${removed} imóveis incompatíveis.`);
+            console.log(`[scraper]   Filtros: area=${filters.areaMin}-${filters.areaMax}m², preço=${filters.priceMin}-${filters.priceMax}, quartos=${filters.bedroomsMin}-${filters.bedroomsMax}`);
+        }
+        console.log(`[scraper] Resultado final: ${filteredHouses.length} imóveis.`);
+
+        return filteredHouses;
     } finally {
         await browser.close();
     }
