@@ -18,7 +18,7 @@ function getApiBaseUrl(): string {
         return ""; // Proxy do Vite redireciona /api → localhost:3001
     }
     // Em produção, usa a variável de ambiente ou URL padrão do Render
-    return import.meta.env.VITE_API_URL || "https://alines-mansion-api.onrender.com";
+    return import.meta.env.VITE_API_URL || "https://alines-mansion.onrender.com";
 }
 
 /**

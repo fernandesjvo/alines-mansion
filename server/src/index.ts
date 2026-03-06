@@ -80,7 +80,7 @@ server.get("/", async () => {
     return {
         name: "Aline's Mansion API",
         version: "2.0",
-        frontend: "https://fernandesjvo.github.io/alines-mansion/",
+        frontend: "https://fernandesjvo.github.io/alines-mansion",
         endpoints: {
             "POST /api/scrape": "Scraping de URL do QuintoAndar",
             "POST /api/export/csv": "Exportar imóveis para CSV",
