@@ -234,20 +234,22 @@ const Index = () => {
           <>
             <StatsCards data={data} />
 
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-              <h2 className="text-xl font-bold font-mono tracking-tight flex items-center gap-2">
-                Resultados da Extração
-                <span className="text-sm font-normal text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">
-                  {data.length}
-                </span>
-              </h2>
-              <div className="flex gap-2 w-full sm:w-auto">
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-end justify-between mb-2">
+              <div className="space-y-3 w-full sm:w-auto">
+                <h2 className="text-xl font-bold font-mono tracking-tight flex items-center gap-2">
+                  Resultados da Extração
+                  <span className="text-sm font-normal text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">
+                    {data.length}
+                  </span>
+                </h2>
                 <Input
                   placeholder="Filtrar por endereço, tipo, ID..."
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                   className="max-w-[300px] font-mono text-sm"
                 />
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                 <Button variant="outline" onClick={handleCheckAvailability} className="gap-2 font-mono text-sm" disabled={loading} title="Verificar Disponibilidade">
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                   {loading ? "Atualizando..." : "Atualizar disponibilidade"}
@@ -257,7 +259,9 @@ const Index = () => {
                   Exportar CSV
                 </Button>
               </div>
-            </div>    <PropertyTable data={data} globalFilter={filter} />
+            </div>
+
+            <PropertyTable data={data} globalFilter={filter} />
 
             <p className="text-[10px] text-muted-foreground font-mono text-center">
               ★ = Preço/m² 15% abaixo da média · Dados reais via Playwright
