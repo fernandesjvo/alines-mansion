@@ -124,18 +124,18 @@ export async function scrapeQuintoAndar(
     onProgress?: (event: ScrapeProgressEvent) => void
 ): Promise<Imovel[]> {
     const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-    const collectedHouses: Map<string, Imovel> = new Map();
+    // Dicionário de metadados perfeitos vindos da rede
+    const metadataCache: Map<string, Imovel> = new Map();
     const isComprar = url.includes("comprar");
 
     const reportProgress = (percent: number, step: ScrapeProgressEvent["step"], message: string, data?: any) => {
         if (onProgress) onProgress({ percent, step, message, data });
     };
 
-    reportProgress(5, "init", "Iniciando scraper...", { url, maxScrolls, isComprar });
+    reportProgress(5, "init", "Iniciando scraper híbrido...", { url, maxScrolls, isComprar });
 
-    console.log(`[scraper] Iniciando scraping: ${url}`);
+    console.log(`[scraper] Iniciando scraping híbrido: ${url}`);
     console.log(`[scraper] Modo: ${isComprar ? "COMPRA" : "ALUGUEL"}`);
-    console.log(`[scraper] User-Agent: ${userAgent}`);
 
     const browser = await chromium.launch({
         headless: true,
@@ -159,7 +159,7 @@ export async function scrapeQuintoAndar(
 
         let capturedResponses = 0;
 
-        // ─── Interceptação AMPLA de rede ───────────────────────────
+        // ─── 1. Interceptação de Rede (Apenas Cadastro de Metadados) ───
         page.on("response", async (response) => {
             try {
                 const status = response.status();
@@ -169,20 +169,14 @@ export async function scrapeQuintoAndar(
                 if (!contentType.includes("json")) return;
 
                 const reqUrl = response.url();
-                const postData = response.request().postData() || "";
 
                 // Ignora assets, analytics, imagens, etc
                 if (
-                    reqUrl.includes("analytics") ||
-                    reqUrl.includes("tracking") ||
-                    reqUrl.includes("pixel") ||
-                    reqUrl.includes("gtm") ||
-                    reqUrl.includes("google") ||
-                    reqUrl.includes("facebook") ||
-                    reqUrl.includes("hotjar") ||
-                    reqUrl.includes("sentry") ||
-                    reqUrl.includes(".png") ||
-                    reqUrl.includes(".jpg") ||
+                    reqUrl.includes("analytics") || reqUrl.includes("tracking") ||
+                    reqUrl.includes("pixel") || reqUrl.includes("gtm") ||
+                    reqUrl.includes("google") || reqUrl.includes("facebook") ||
+                    reqUrl.includes("hotjar") || reqUrl.includes("sentry") ||
+                    reqUrl.includes(".png") || reqUrl.includes(".jpg") ||
                     reqUrl.includes(".svg")
                 ) {
                     return;
@@ -191,22 +185,21 @@ export async function scrapeQuintoAndar(
                 const body = await response.json().catch(() => null);
                 if (!body) return;
 
-                const sizeBefore = collectedHouses.size;
-                extractHousesFromJSON(body, collectedHouses, isComprar);
-                const sizeAfter = collectedHouses.size;
+                const sizeBefore = metadataCache.size;
+                // Popula o dicionário, mas NÃO significa que esses imóveis serão exportados
+                extractHousesFromJSON(body, metadataCache, isComprar);
+                const sizeAfter = metadataCache.size;
 
                 capturedResponses++;
                 if (sizeAfter > sizeBefore) {
-                    console.log(
-                        `[scraper] ✓ Capturou ${sizeAfter - sizeBefore} imóveis de: ${reqUrl.substring(0, 80)}...`
-                    );
+                    console.log(`[scraper] ✓ Cache de metadados cresceu em ${sizeAfter - sizeBefore} itens via rede.`);
                 }
             } catch {
                 // Ignora erros de respostas individuais
             }
         });
 
-        // ─── Navegação ─────────────────────────────────────────────
+        // ─── 2. Navegação ─────────────────────────────────────────────
         console.log("[scraper] Navegando para a página...");
         reportProgress(10, "navigating", "Navegando para a página do QuintoAndar...");
         await page.goto(url, {
@@ -214,55 +207,36 @@ export async function scrapeQuintoAndar(
             timeout: 60000,
         });
 
-        // Espera tempo suficiente para as requisições principais
         await humanDelay(2500, 4000);
 
-        console.log(
-            `[scraper] Página carregada. ${capturedResponses} respostas JSON capturadas, ${collectedHouses.size} imóveis até agora.`
-        );
-
-        // ─── Scroll para carregar mais imóveis ─────────────────────
+        // ─── 3. Scroll para carregar mais imóveis visíveis ───────────
         const SCROLL_COUNT = maxScrolls;
         console.log(`[scraper] Iniciando ${SCROLL_COUNT} scrolls...`);
         reportProgress(20, "scrolling", `Iniciando rolagens na página (0/${SCROLL_COUNT})`, { totalScrolls: SCROLL_COUNT });
 
         for (let i = 0; i < SCROLL_COUNT; i++) {
-            const progressPercent = 20 + Math.floor(((i + 1) / SCROLL_COUNT) * 60); // 20% to 80%
+            const progressPercent = 20 + Math.floor(((i + 1) / SCROLL_COUNT) * 60);
             reportProgress(
                 progressPercent,
                 "scrolling",
-                `Rolando página e capturando dados (${i + 1}/${SCROLL_COUNT})...\nImóveis coletados: ${collectedHouses.size}`,
-                { currentScroll: i + 1, totalScrolls: SCROLL_COUNT, collected: collectedHouses.size }
+                `Carregando itens visíveis da página (${i + 1}/${SCROLL_COUNT})...\nCache: ${metadataCache.size} imóveis arquivados`,
+                { currentScroll: i + 1, totalScrolls: SCROLL_COUNT, cacheSize: metadataCache.size }
             );
 
-            // Scroll gradual (mais realista)
+            // Scroll manual de 1000px por vez para forçar carregamento de imagens e cards nativos
             await page.evaluate(async () => {
-                const totalHeight = document.body.scrollHeight;
-                const viewportHeight = window.innerHeight;
-                const currentScroll = window.scrollY;
-                const targetScroll = Math.min(
-                    currentScroll + viewportHeight * 1.5,
-                    totalHeight
-                );
-                window.scrollTo({ top: targetScroll, behavior: "smooth" });
+                window.scrollBy({ top: 1200, behavior: "smooth" });
             });
 
             await humanDelay(1500, 2500);
 
-            // Tenta clicar em botões de "carregar mais" / "ver mais"
+            // Tenta clicar em botões de "carregar mais"
             try {
                 const loadMoreSelectors = [
                     'button:has-text("Mostrar mais")',
                     'button:has-text("Carregar mais")',
                     'button:has-text("Ver mais")',
                     'button:has-text("Próxima página")',
-                    'a:has-text("Mostrar mais")',
-                    'a:has-text("Ver mais")',
-                    '[data-testid="load-more"]',
-                    '[class*="load-more"]',
-                    '[class*="LoadMore"]',
-                    '[class*="pagination"] button',
-                    '[class*="Pagination"] button',
                 ];
 
                 for (const selector of loadMoreSelectors) {
@@ -270,7 +244,7 @@ export async function scrapeQuintoAndar(
                         const btn = page.locator(selector).first();
                         if (await btn.isVisible({ timeout: 500 })) {
                             await btn.click();
-                            console.log(`[scraper] Clicou em: ${selector}`);
+                            console.log(`[scraper] Clicou em carregar mais`);
                             await humanDelay(1500, 2500);
                             break;
                         }
@@ -281,48 +255,24 @@ export async function scrapeQuintoAndar(
             } catch {
                 // Sem botão de carregar mais
             }
-
-            console.log(
-                `[scraper] Scroll ${i + 1}/${SCROLL_COUNT} — ${collectedHouses.size} imóveis coletados`
-            );
         }
 
-        // Scroll final até o topo e volta para disparar possíveis lazy loads
-        await page.evaluate(() => window.scrollTo({ top: 0, behavior: "smooth" }));
-        await humanDelay(500, 1000);
-        await page.evaluate(() =>
-            window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" })
-        );
-        await humanDelay(1500, 2500);
+        console.log(`[scraper] Pós-scroll: ${capturedResponses} requests. Metadados cacheados: ${metadataCache.size}.`);
 
-        console.log(
-            `[scraper] Pós-scroll: ${capturedResponses} respostas, ${collectedHouses.size} imóveis.`
-        );
+        // ─── 4. Extração Estrita do DOM (Respeitando Filtros Visuais) ───
+        reportProgress(90, "extracting", "Cruzando cards visíveis com o Dicionário de Preços...", { cacheSize: metadataCache.size });
+        console.log("[scraper] Extraindo imóveis estritamente dos cards visíveis do DOM...");
 
-        // ─── Fallback: extrai dados do DOM ─────────────────────────
-        if (collectedHouses.size === 0) {
-            console.log(
-                "[scraper] Nenhum dado via interceptação de rede. Extraindo via DOM..."
-            );
-            const domHouses = await extractFromDOM(page, isComprar);
-            for (const house of domHouses) {
-                collectedHouses.set(house.id, house);
-            }
-            console.log(
-                `[scraper] Extraídos ${domHouses.length} imóveis via DOM.`
-            );
-        }
+        const strictHouses = await extractFromDOM(page, isComprar, metadataCache);
+
+        console.log(`[scraper] Extraídos ${strictHouses.length} imóveis visíveis.`);
 
         await context.close();
+
+        return strictHouses;
     } finally {
         await browser.close();
     }
-
-    const result = Array.from(collectedHouses.values());
-    console.log(
-        `[scraper] Scraping finalizado. ${result.length} imóveis encontrados.`
-    );
-    return result;
 }
 
 // ─── Campos de preço por contexto ────────────────────────────────
@@ -521,14 +471,21 @@ function extractHousesFromJSON(
 }
 
 /**
- * Fallback robusto: extrai dados diretamente do DOM da página.
- * Procura links para imóveis e textos com preços/áreas.
+ * Extração Estrita: extrai dados apenas dos imóveis listados VISUAMENTE no DOM (Strategy 1).
+ * Para cada card encontrado no HTML da tela, tenta recuperar seus metadados ricos e perfeitos pelo `metadataCache`.
+ * Caso o cache não o tenha capturado, faz o fallback processando regex sobre o texto do card.
  */
 async function extractFromDOM(
     page: import("playwright").Page,
-    isComprar: boolean
+    isComprar: boolean,
+    metadataCache: Map<string, Imovel>
 ): Promise<Imovel[]> {
-    return page.evaluate((isComprar: boolean) => {
+    // Para simplificar a transferência entre Node e Browser Context,
+    // nós enviamos os pares [ID, Imovel] para o Browser e depois iteramos.
+    const cacheEntries = Array.from(metadataCache.entries());
+
+    return page.evaluate(({ isComprar, cacheEntries }) => {
+        const cache = new Map(cacheEntries);
         const results: Array<{
             id: string;
             bairro: string;
@@ -542,8 +499,11 @@ async function extractFromDOM(
 
         const seen = new Set<string>();
 
-        // ─── Estratégia 1: Procurar todos os links para /imovel/ ───
+        // ─── Apenas Estratégia 1: Procurar todos os links visíveis para /imovel/ ───
+        // Isso nos dá a segurança absoluta de que o imóvel foi RENDERIZADO na tela
+        // (respeitando rigorosamente a contagem de filtros do QuintoAndar)
         const allLinks = document.querySelectorAll('a[href*="/imovel/"]');
+
         allLinks.forEach((anchor) => {
             try {
                 const href = (anchor as HTMLAnchorElement).href || "";
@@ -554,7 +514,14 @@ async function extractFromDOM(
                 if (seen.has(id)) return;
                 seen.add(id);
 
-                // Pega o card pai (sobe na árvore até achar um container relevante)
+                // --- 1. Tenta recuperar do Dicionário de Metadados Perfeitos (Cache) ---
+                if (cache.has(id)) {
+                    // Cache Hit: Dados 100% precisos. Array do Next/GraphQL
+                    results.push(cache.get(id)!);
+                    return; // Passa para o próximo link
+                }
+
+                // --- 2. Cache Miss: Fallback para Extração do Texto do DOM (Menos Preciso) ---
                 const card =
                     anchor.closest('[class*="card"]') ||
                     anchor.closest('[class*="Card"]') ||
@@ -569,13 +536,10 @@ async function extractFromDOM(
 
                 const text = card?.textContent || "";
 
-                // Extrai preço — procura padrões como "R$ 150.000" ou "R$ 3.500"
-                const pricePatterns = text.match(
-                    /R\$\s*([\d.]+(?:,\d{2})?)/g
-                );
+                // Extrai preço
+                const pricePatterns = text.match(/R\$\s*([\d.]+(?:,\d{2})?)/g);
                 let price = 0;
                 if (pricePatterns && pricePatterns.length > 0) {
-                    // Pega o primeiro preço encontrado (geralmente o principal)
                     const mainPrice = pricePatterns[0]
                         .replace(/[R$\s]/g, "")
                         .replace(/\./g, "")
@@ -594,7 +558,7 @@ async function extractFromDOM(
                     text.match(/(\d+)\s*qto/i);
                 const quartos = quartoMatch ? parseInt(quartoMatch[1]) : 0;
 
-                // Extrai bairro (texto antes de vírgulas, ou partes curtas do texto)
+                // Extrai bairro
                 let bairro = "";
                 const addressEl = card?.querySelector(
                     '[class*="address"], [class*="Address"], [class*="neighborhood"], [class*="Neighborhood"], [class*="location"], [class*="Location"], [class*="region"], [class*="Region"]'
@@ -609,10 +573,7 @@ async function extractFromDOM(
                         bairro,
                         areaMt2: area,
                         precoTotal: price,
-                        precoPorMt2:
-                            area > 0 && price > 0
-                                ? Math.round((price / area) * 100) / 100
-                                : 0,
+                        precoPorMt2: area > 0 && price > 0 ? Math.round((price / area) * 100) / 100 : 0,
                         link: href,
                         quartos,
                         tipo: "Imóvel",
@@ -623,81 +584,10 @@ async function extractFromDOM(
             }
         });
 
-        // ─── Estratégia 2: Procurar dados em __NEXT_DATA__ ─────────
-        try {
-            const nextDataScript = document.getElementById("__NEXT_DATA__");
-            if (nextDataScript) {
-                const nextData = JSON.parse(nextDataScript.textContent || "{}");
-                // Percorre o JSON do Next.js procurando dados de imóveis
-                const queue: unknown[] = [nextData];
-                while (queue.length > 0 && results.length < 200) {
-                    const current = queue.shift();
-                    if (!current || typeof current !== "object") continue;
-
-                    if (Array.isArray(current)) {
-                        for (const item of current) queue.push(item);
-                        continue;
-                    }
-
-                    const rec = current as Record<string, unknown>;
-                    const recId =
-                        rec.id || rec.houseId || rec.listingId || rec.propertyId;
-                    const recPrice =
-                        rec.salePrice ??
-                        rec.price ??
-                        rec.totalCost ??
-                        rec.rent ??
-                        rec.sellingPrice ??
-                        rec.listingPrice;
-
-                    if (recId && recPrice !== undefined) {
-                        const id = String(recId);
-                        if (!seen.has(id)) {
-                            seen.add(id);
-                            const p =
-                                typeof recPrice === "number"
-                                    ? recPrice
-                                    : parseFloat(
-                                        String(recPrice)
-                                            .replace(/[R$\s.]/g, "")
-                                            .replace(",", ".")
-                                    ) || 0;
-                            const a = Number(
-                                rec.area ?? rec.usableArea ?? rec.totalArea ?? 0
-                            );
-                            const b = String(
-                                rec.neighbourhood ??
-                                rec.neighborhood ??
-                                rec.bairro ??
-                                rec.regionName ??
-                                ""
-                            );
-                            const q = Number(rec.bedrooms ?? rec.dorms ?? rec.quartos ?? 0);
-                            if (p > 0) {
-                                results.push({
-                                    id,
-                                    bairro: b,
-                                    areaMt2: a,
-                                    precoTotal: p,
-                                    precoPorMt2:
-                                        a > 0 ? Math.round((p / a) * 100) / 100 : 0,
-                                    link: `https://www.quintoandar.com.br/imovel/${id}`,
-                                    quartos: q,
-                                    tipo: "Imóvel",
-                                });
-                            }
-                        }
-                    }
-
-                    for (const val of Object.values(rec)) {
-                        if (val && typeof val === "object") queue.push(val);
-                    }
-                }
-            }
-        } catch {
-            // __NEXT_DATA__ não disponível ou inválido
-        }
+        // NOTA: A antiga "Estratégia 2" (__NEXT_DATA__) foi EXTIRPADA permanentemente.
+        // O `__NEXT_DATA__` estava poluindo os resultados com centenas de "imóveis recomendados"
+        // e "marcações de mapa", quebrando os filtros de busca do usuário.
 
         return results;
-    }, isComprar);
+    }, { isComprar, cacheEntries });
 }
