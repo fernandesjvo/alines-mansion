@@ -75,6 +75,20 @@ server.post<{ Body: { imoveis: Imovel[] } }>("/api/export/csv", async (request, 
         .send(csv);
 });
 
+// ─── Rota raiz (info) ──────────────────────────────────────────
+server.get("/", async () => {
+    return {
+        name: "Aline's Mansion API",
+        version: "2.0",
+        frontend: "https://fernandesjvo.github.io/alines-mansion/",
+        endpoints: {
+            "POST /api/scrape": "Scraping de URL do QuintoAndar",
+            "POST /api/export/csv": "Exportar imóveis para CSV",
+            "GET /api/health": "Health check",
+        },
+    };
+});
+
 // ─── Health check ──────────────────────────────────────────────
 server.get("/api/health", async () => {
     return { status: "ok", timestamp: new Date().toISOString() };
